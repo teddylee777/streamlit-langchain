@@ -9,13 +9,23 @@ from langchain_openai import ChatOpenAI
 import os
 import pickle
 import datetime
+import settings
 
 
 # API KEY 를 설정합니다.
-# .streamlit/secrets.toml 파일에 OPENAI_API_KEY 를 설정해야 합니다.
-api_key = st.secrets["OPENAI_API_KEY"]
+if "api_key" not in st.session_state:
+    config = settings.load_config()
+    if "api_key" in config:
+        st.session_state.api_key = settings.load_config()["api_key"]
+    else:
+        st.session_state.api_key = ""
 
 st.title("나만의 Chatbot")
+st.markdown(
+    f"""API KEY
+    `{st.session_state.api_key[:-15] + '***************'}`
+    """
+)
 
 
 if "history" not in st.session_state:
@@ -54,6 +64,7 @@ llm = ChatOpenAI(
     model="gpt-4-turbo-preview",
     streaming=True,
     callbacks=[StreamCallback(st.empty())],
+    api_key=st.session_state.api_key,
 )
 
 # ConversationChain 객체를 생성합니다.
@@ -91,6 +102,7 @@ if prompt_input:
 model_input = tab2.selectbox("Model", ["gpt-3.5-turbo", "gpt-4-turbo-preview"], index=1)
 
 if model_input:
+    settings.save_config({"model": model_input})
     llm.model_name = model_input
     model_name.markdown(f"#### {model_input}")
 

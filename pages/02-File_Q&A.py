@@ -17,14 +17,24 @@ from langchain.memory import ConversationBufferMemory
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
 from langchain import hub
-
+import settings
+import pickle
+import os
 
 # API KEY 를 설정합니다.
-# .streamlit/secrets.toml 파일에 OPENAI_API_KEY 를 설정해야 합니다.
-api_key = st.secrets["OPENAI_API_KEY"]
+if "api_key" not in st.session_state:
+    config = settings.load_config()
+    if "api_key" in config:
+        st.session_state.api_key = settings.load_config()["api_key"]
+    else:
+        st.session_state.api_key = ""
 
 st.title("나만의 Chatbot")
-
+st.markdown(
+    f"""API KEY
+    `{st.session_state.api_key[:-15] + '***************'}`
+    """
+)
 
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -44,6 +54,30 @@ def add_history(role, content):
         st.session_state.user.append(content)
     elif role == "ai":
         st.session_state.ai.append(content)
+
+
+def save_chat_history(title):
+    pickle.dump(
+        st.session_state.history,
+        open(os.path.join("./chat_history", f"{title}.pkl"), "wb"),
+    )
+
+
+def load_chat_history(filename):
+    with open(os.path.join("./chat_history", f"{filename}.pkl"), "rb") as f:
+        st.session_state.history = pickle.load(f)
+        print(st.session_state.history)
+        st.session_state.user.clear()
+        st.session_state.ai.clear()
+        for user, ai in st.session_state.history:
+            add_history("user", user)
+            add_history("ai", ai)
+
+
+def load_chat_history_list():
+    files = os.listdir("./chat_history")
+    files = [f.split(".")[0] for f in files]
+    return files
 
 
 model_name = st.empty()
@@ -108,12 +142,38 @@ def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
 
+def print_history():
+    for i in range(len(st.session_state.ai)):
+        tab1.chat_message("user").write(st.session_state["user"][i])
+        tab1.chat_message("ai").write(st.session_state["ai"][i])
+
+
 with st.sidebar:
     file = st.file_uploader(
         "파일 업로드",
         type=["pdf", "txt", "docx"],
     )
+    clear_btn = st.button("대화내용 초기화", type="primary", use_container_width=True)
+    save_title = st.text_input(
+        "저장할 제목",
+    )
+    save_btn = st.button("대화내용 저장", use_container_width=True)
 
+    if clear_btn:
+        st.session_state.history.clear()
+        st.session_state.user.clear()
+        st.session_state.ai.clear()
+        print_history()
+
+    if save_btn and save_title:
+        save_chat_history(save_title)
+
+    selected_chat = st.selectbox(
+        "대화내용 불러오기", load_chat_history_list(), index=None
+    )
+    load_btn = st.button("대화내용 불러오기", use_container_width=True)
+    if load_btn and selected_chat:
+        load_chat_history(selected_chat)
 
 if file:
     retriever = embed_file(file)
@@ -130,12 +190,6 @@ Answer:"""
     return prompt
 
 
-def print_history():
-    for i in range(len(st.session_state.ai)):
-        tab1.chat_message("user").write(st.session_state["user"][i])
-        tab1.chat_message("ai").write(st.session_state["ai"][i])
-
-
 print_history()
 
 if user_input := st.chat_input():
@@ -150,6 +204,7 @@ if user_input := st.chat_input():
                 temperature=0.1,
                 streaming=True,
                 callbacks=[StreamCallback(msg)],
+                api_key=st.session_state.api_key,
             )
             prompt = create_prompt(prompt_input)
 
